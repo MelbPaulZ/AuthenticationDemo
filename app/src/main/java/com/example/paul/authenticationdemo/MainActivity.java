@@ -72,9 +72,9 @@ public class MainActivity extends Activity
     static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
     static final int REQUEST_PERMISSION_GET_ACCOUNTS = 1003;
 
-    private static final String BUTTON_TEXT = "Call Google Calendar API";
+    private static final String BUTTON_TEXT = "Call Google contacts and Calendar API";
     private static final String PREF_ACCOUNT_NAME = "accountName";
-    private static final String[] SCOPES = { CalendarScopes.CALENDAR_READONLY, PeopleScopes.CONTACTS_READONLY };
+    private static final String[] SCOPES = { CalendarScopes.CALENDAR, PeopleScopes.CONTACTS_READONLY };
 
 
     /**
@@ -315,7 +315,6 @@ public class MainActivity extends Activity
         }
     }
 
-
     /**
      * Display an error dialog showing that Google Play Services is missing
      * or out of date.
@@ -337,7 +336,7 @@ public class MainActivity extends Activity
      * Placing the API calls in their own task ensures the UI stays responsive.
      */
     private class MakeRequestTask extends AsyncTask<Void, Void, List<String>> {
-        private com.google.api.services.calendar.Calendar mService = null;
+        private com.google.api.services.calendar.Calendar mCalendar = null;
         private Exception mLastError = null;
         private People mPeople = null;
 
@@ -350,7 +349,7 @@ public class MainActivity extends Activity
         public MakeRequestTask(GoogleAccountCredential credential) {
             HttpTransport transport = AndroidHttp.newCompatibleTransport();
             JsonFactory jsonFactory = JacksonFactory.getDefaultInstance();
-            mService = new com.google.api.services.calendar.Calendar.Builder(
+            mCalendar = new com.google.api.services.calendar.Calendar.Builder(
                     transport, jsonFactory, credential)
                     .setApplicationName("Google Calendar API Android Quickstart")
                     .build();
@@ -393,7 +392,7 @@ public class MainActivity extends Activity
                     .execute();
 
 
-            // [Try Start]
+            // [Start getting contacts info]
             List<Person> connections = response.getConnections();
             List<String> peopleStrings = new ArrayList<String>();
 
@@ -426,42 +425,88 @@ public class MainActivity extends Activity
                             );
                         }
                     }
-//                    List<Name> names = person.getNames();
-//                    if (names != null && names.size() > 0) {
-//                        System.out.println("Name: " + person.getNames().get(0)
-//                                .getDisplayName());
-//                    } else {
-//                        System.out.println("No names available for connection.");
-//                    }
                 }
             } else {
                 System.out.println("No connections found.");
             }
-            // [Try End]
+            // [End getting contacts info]
 
             //
-            // List the next 10 events from the primary calendar.
-//            DateTime now = new DateTime(System.currentTimeMillis());
-//            List<String> eventStrings = new ArrayList<String>();
-//            Events events = mService.events().list("primary")
-//                    .setMaxResults(10)
-//                    .setTimeMin(now)
-//                    .setOrderBy("startTime")
-//                    .setSingleEvents(true)
-//                    .execute();
-//            List<Event> items = events.getItems();
+            // List the events from the primary calendar.
+            DateTime now = new DateTime(System.currentTimeMillis());
+            List<String> eventStrings = new ArrayList<String>();
+            Events events = mCalendar.events().list("primary")
+                    .setTimeMin(now)
+                    //.setOrderBy("startTime")   // if use this line, the nextSyncToken will be null
+                    .setSingleEvents(true)
+                    .execute();
+            List<Event> items = events.getItems();
+
+
+            String nextSyncToken = events.getNextSyncToken();// this is for first fully synchronisation
+            String nextPageToken = events.getNextPageToken();// this is for incremental synchronisation
+
+            for (Event event : items) {
+                DateTime start = event.getStart().getDateTime();
+                if (start == null) {
+                    // All-day events don't have start times, so just use
+                    // the start date.
+                    start = event.getStart().getDate();
+                }
+                eventStrings.add(
+                        String.format("event :%s (%s)", event.getSummary(), start));
+            }
+
+            // [Start add event]
+            Event event = new Event()
+                    .setSummary("iTime Demo")
+                    .setLocation("Parkvile Campus")
+                    .setDescription("Itime Android Demo");
+
+            DateTime startDateTime = new DateTime("2016-07-25T13:00:00+10:00");
+            EventDateTime start = new EventDateTime()
+                    .setDateTime(startDateTime)
+                    .setTimeZone("Australia/Melbourne");
+            event.setStart(start);
+
+            DateTime endDateTime = new DateTime("2016-07-25T15:00:00+10:00");
+            EventDateTime end = new EventDateTime()
+                    .setDateTime(endDateTime)
+                    .setTimeZone("Australia/Melbourne");
+            event.setEnd(end);
+
+//            String[] recurrence = new String[] {"RRULE:FREQ=DAILY;COUNT=2"};
+//            event.setRecurrence(Arrays.asList(recurrence));
 //
-//            for (Event event : items) {
-//                DateTime start = event.getStart().getDateTime();
-//                if (start == null) {
-//                    // All-day events don't have start times, so just use
-//                    // the start date.
-//                    start = event.getStart().getDate();
-//                }
-//                eventStrings.add(
-//                        String.format("%s (%s)", event.getSummary(), start));
-//            }
-            return peopleStrings;
+//            EventAttendee[] attendees = new EventAttendee[] {
+//                    new EventAttendee().setEmail("lpage@example.com"),
+//                    new EventAttendee().setEmail("sbrin@example.com"),
+//            };
+//            event.setAttendees(Arrays.asList(attendees));
+//
+//            EventReminder[] reminderOverrides = new EventReminder[] {
+//                    new EventReminder().setMethod("email").setMinutes(24 * 60),
+//                    new EventReminder().setMethod("popup").setMinutes(10),
+//            };
+//            Event.Reminders reminders = new Event.Reminders()
+//                    .setUseDefault(false)
+//                    .setOverrides(Arrays.asList(reminderOverrides));
+//            event.setReminders(reminders);
+
+            String calendarId = "primary";
+            event = mCalendar.events().insert(calendarId, event).execute();
+//            System.out.printf("Event created: %s\n", event.getHtmlLink());
+
+
+            // [End add event]
+
+            ArrayList<String> resultStringList = new ArrayList<String>();
+            resultStringList.addAll(peopleStrings);
+            resultStringList.addAll(eventStrings);
+            resultStringList.add("nextSyncToken: "+nextSyncToken);
+            resultStringList.add("nextPageToken: "+nextPageToken);
+            resultStringList.add("new event created: "+event.getSummary());
+            return resultStringList;
         }
 
 
